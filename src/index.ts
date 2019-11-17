@@ -1,12 +1,16 @@
 import { ObjectId } from 'bson'
+import { ServiceError } from './errors/ServiceError'
+import { AuthorizationError } from './errors/AuthorizationError'
+import { UnresponsiveServiceError } from './errors/UnresponsiveServiceError'
 
 import {
+  Models,
   Aborter,
-  BlockBlobURL,
-  ContainerURL,
   ServiceURL,
-  SharedKeyCredential,
   StorageURL,
+  ContainerURL,
+  BlockBlobURL,
+  SharedKeyCredential,
 } from '@azure/storage-blob'
 
 export abstract class AzureBlobStorageClient {
@@ -22,11 +26,49 @@ export abstract class AzureBlobStorageClient {
     this.containerURL = ContainerURL.fromServiceURL(this.serviceURL, containerName);
   }
 
-  async uploadBase64(base64:string) {
+  async upload(text:string) {
     const fileName =`${new ObjectId().toHexString()}`
-    const blockBlobURL = BlockBlobURL.fromContainerURL(this.containerURL, fileName);
+    let blockBlobURL: BlockBlobURL
+    try{
+      blockBlobURL = BlockBlobURL.fromContainerURL(this.containerURL, fileName);
+      await blockBlobURL.upload(this.aborter, text, text.length);
+    }catch(error){
+      if (!error.response) throw new UnresponsiveServiceError(`${this.containerURL}/${fileName}`)
+      if (error.response.status === 403) throw new AuthorizationError()
+      if (error.response.status === 404) return null
+      throw new ServiceError(error.response)
+    }
 
-    await blockBlobURL.upload(this.aborter, base64, base64.length);
     return blockBlobURL.url
   }
+
+  async download(fileName: string) {
+    let downloadResponse: Models.BlobDownloadResponse
+
+    try{
+      const blockBlobURL = BlockBlobURL.fromContainerURL(this.containerURL, fileName)
+      downloadResponse = await blockBlobURL.download(this.aborter, 0)
+    }catch(error){
+      if (!error.response) throw new UnresponsiveServiceError(`${this.containerURL.url}/${fileName}`)
+      if (error.response.status === 403) throw new AuthorizationError()
+      if (error.response.status === 404) return null
+
+      throw new ServiceError(error.response)
+    }
+
+    
+    return new Promise((resolve, reject) => {
+      const chunks: string[] = []
+      const readableStream = downloadResponse.readableStreamBody as NodeJS.ReadableStream
+      
+      readableStream.on('data', data => {
+        chunks.push(data.toString());
+      });
+      readableStream.on('end', () => {
+        resolve(chunks.join(''));
+      });
+      readableStream.on('error', reject);
+    });
+  }
 }
+
