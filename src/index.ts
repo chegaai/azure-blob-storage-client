@@ -1,5 +1,6 @@
 import { ObjectId } from 'bson'
 import { ServiceError } from './errors/ServiceError'
+import { EmptyAccessKeyError } from './errors/EmptyAcessKeyError'
 import { AuthorizationError } from './errors/AuthorizationError'
 import { UnresponsiveServiceError } from './errors/UnresponsiveServiceError'
 
@@ -19,6 +20,8 @@ export abstract class AzureBlobStorageClient {
   private  aborter: Aborter
 
   constructor (accountAccessKey:string, accountName: string, containerName:string, timeOut:number) {
+    if(!accountAccessKey)
+      throw new EmptyAccessKeyError()
     this.aborter = Aborter.timeout(timeOut);
     const credentials = new SharedKeyCredential(accountName, accountAccessKey);
     const pipeline = StorageURL.newPipeline(credentials);
@@ -33,7 +36,7 @@ export abstract class AzureBlobStorageClient {
       blockBlobURL = BlockBlobURL.fromContainerURL(this.containerURL, fileName);
       await blockBlobURL.upload(this.aborter, text, text.length);
     }catch(error){
-      if (!error.response) throw new UnresponsiveServiceError(`${this.containerURL}/${fileName}`)
+      if (!error.response) throw new UnresponsiveServiceError(`${this.containerURL.url}/${fileName}`)
       if (error.response.status === 403) throw new AuthorizationError()
       if (error.response.status === 404) return null
       throw new ServiceError(error.response)
