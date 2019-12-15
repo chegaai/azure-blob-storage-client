@@ -1,6 +1,6 @@
 {
   "name": "azure-blob-storage-client",
-  "version": "0.0.8",
+  "version": "1.0.0",
   "description": "package for upload base64 image to Azure blob storage",
   "main": "dist/index.js",
   "scripts": {
