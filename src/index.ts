@@ -1,14 +1,7 @@
+import { Aborter, BlockBlobURL, ContainerURL, ServiceURL, SharedKeyCredential, StorageURL } from '@azure/storage-blob'
 import { ObjectId } from 'bson'
 import { EmptyAccessKeyError } from './errors/EmptyAcessKeyError'
 
-import {
-  Aborter,
-  ServiceURL,
-  StorageURL,
-  ContainerURL,
-  BlockBlobURL,
-  SharedKeyCredential,
-} from '@azure/storage-blob'
 
 function streamToBuffer (stream: NodeJS.ReadableStream) {
   return new Promise((resolve, reject) => {
@@ -29,12 +22,11 @@ function streamToBuffer (stream: NodeJS.ReadableStream) {
 export abstract class AzureBlobStorageClient {
   private containerURL: ContainerURL
   private serviceURL: ServiceURL
-  private aborter: Aborter
+  private timeout: number
 
-  constructor (accountAccessKey: string, accountName: string, containerName: string, timeOut: number) {
-    if (!accountAccessKey)
-      throw new EmptyAccessKeyError()
-    this.aborter = Aborter.timeout(timeOut)
+  constructor (accountAccessKey: string, accountName: string, containerName: string, timeout: number) {
+    if (!accountAccessKey) throw new EmptyAccessKeyError()
+    this.timeout = timeout
     const credentials = new SharedKeyCredential(accountName, accountAccessKey)
     const pipeline = StorageURL.newPipeline(credentials)
     this.serviceURL = new ServiceURL(`https://${accountName}.blob.core.windows.net`, pipeline)
@@ -45,7 +37,7 @@ export abstract class AzureBlobStorageClient {
     const fileName = `${new ObjectId().toHexString()}`
 
     const blockBlobURL = BlockBlobURL.fromContainerURL(this.containerURL, fileName)
-    await blockBlobURL.upload(this.aborter, content, content.byteLength, { blobHTTPHeaders: { blobContentType: mimeType } })
+    await blockBlobURL.upload(Aborter.timeout(this.timeout), content, content.byteLength, { blobHTTPHeaders: { blobContentType: mimeType } })
     return blockBlobURL.url
   }
 
@@ -56,7 +48,7 @@ export abstract class AzureBlobStorageClient {
 
   async download (fileName: string) {
     const blockBlobURL = BlockBlobURL.fromContainerURL(this.containerURL, fileName)
-    const { readableStreamBody } = await blockBlobURL.download(this.aborter, 0)
+    const { readableStreamBody } = await blockBlobURL.download(Aborter.timeout(this.timeout), 0)
     return streamToBuffer(readableStreamBody!)
   }
 }
